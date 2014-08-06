@@ -1,11 +1,11 @@
 -module(peer).
 -define(ROUND_TIMEOUT_MIN, 5000).
--define(ROUND_TIMEOUT_MAX, 5500).
+-define(ROUND_TIMEOUT_MAX, 5700).
 
--define(VOTE_TIMEOUT, 5000).
+-define(VOTE_TIMEOUT, 500).
 -define(KEEP_ALIVE_TIME, 250).
 
--export([timer_test/2, initial/2, spawn_wait/0, setup/1]).
+-export([timer_test/2, initial/2, spawn_wait/0, setup/1, setup_sync/1]).
 
 -record(peer_state,
     {
@@ -65,6 +65,9 @@ initial(Seed, Peers) ->
 
 follower(State=#peer_state{timer=Timer, round=Round}) ->
   receive
+    {leader, Leader, R} when R >= Round ->
+      S2 = cancel_timer(State),
+      io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]);
     {timeout, Timer, {round_timeout, R}} when R >= Round ->
       io:format("~p should start election now for round ~p~n", [self(), R + 1]),
       election(State#peer_state{round=R + 1});
@@ -215,3 +218,12 @@ setup (N) ->
         io:format("Opening flood gates~n"),
         lists:zipwith(fun (Peer, Arg) -> Peer ! Arg end, Peers, Args)
   end.
+
+-spec(setup_sync(integer()) -> none()).
+setup_sync (N) ->
+  Seeds = [{X * 13, X * 7, X + 1} || X <- lists:seq(1, N)],
+  Peers = [spawn_link(fun spawn_wait/0) || _ <- lists:seq(1, N)],
+  Args = [{start, Seed, Peers} || Seed <- Seeds],
+  io:format("Opening flood gates~n"),
+  lists:zipwith(fun (Peer, Arg) -> Peer ! Arg end, Peers, Args),
+  ok.

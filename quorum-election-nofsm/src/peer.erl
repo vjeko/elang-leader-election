@@ -5,7 +5,7 @@
 -define(VOTE_TIMEOUT, 500).
 -define(KEEP_ALIVE_TIME, 250).
 
--export([timer_test/2, initial/2, spawn_wait/0, setup/1, setup_sync/1]).
+-export([timer_test/2, initial/2, spawn_wait/0, setup/1, setup_sync/1, concuerror_test/0]).
 
 -record(peer_state,
     {
@@ -66,7 +66,7 @@ initial(Seed, Peers) ->
 follower(State=#peer_state{timer=Timer, round=Round}) ->
   receive
     {leader, Leader, R} when R >= Round ->
-      S2 = cancel_timer(State),
+      _S2 = cancel_timer(State),
       io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]);
     {timeout, Timer, {round_timeout, R}} when R >= Round ->
       io:format("~p should start election now for round ~p~n", [self(), R + 1]),
@@ -204,7 +204,7 @@ spawn_wait () ->
             io:format("Received start signal~n"),
             initial(Seed, Peers);
         M ->
-          io:format("Received something else ~p ~n", [M]),
+          io:format("~p [Peer-Internal] Received something else ~p ~n", [self(), M]),
           spawn_wait()
     end.
 
@@ -227,3 +227,8 @@ setup_sync (N) ->
   io:format("Opening flood gates~n"),
   lists:zipwith(fun (Peer, Arg) -> Peer ! Arg end, Peers, Args),
   ok.
+
+-spec(concuerror_test() -> none()).
+concuerror_test() ->
+  io:format("~p starting thing~n", [self()]),
+  setup_sync(7).

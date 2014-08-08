@@ -1,6 +1,6 @@
 -module(peer).
 -define(ROUND_TIMEOUT_MIN, 5000).
--define(ROUND_TIMEOUT_MAX, 5002).
+-define(ROUND_TIMEOUT_MAX, 5200).
 
 -define(VOTE_TIMEOUT, 500).
 -define(KEEP_ALIVE_TIME, 250).

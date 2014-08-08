@@ -72,7 +72,7 @@ follower(State=#peer_state{timer=Timer, round=Round}) when Round =< ?MAX_ROUNDS 
     {timeout, Timer, {round_timeout, R}} when R >= Round ->
       io:format("~p should start election now for round ~p~n", [self(), R]),
       election(State#peer_state{round=R});
-    {request_vote, Counter, Pid, R} when R > Round ->
+    {request_vote, Counter, Pid, R} when R >= Round ->
       io:format("~p voting for ~p for round ~p~n", [self(), Pid, R]),
       S2 = cancel_timer(State),
       Counter ! {accept, Pid, R},
@@ -80,7 +80,7 @@ follower(State=#peer_state{timer=Timer, round=Round}) when Round =< ?MAX_ROUNDS 
              S2#peer_state{voted_for=Pid, round = R},
              ?VOTE_TIMEOUT,
              {vote_timeout, R}));
-    {request_vote, Counter, Pid, R} when R =< Round ->
+    {request_vote, Counter, Pid, R} when R < Round ->
       io:format("~p not voting for ~p (stale round ~p)~n", [self(), Pid, R]),
       Counter ! {reject, Pid, R},
       follower(State)

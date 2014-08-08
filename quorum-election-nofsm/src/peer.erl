@@ -69,8 +69,8 @@ follower(State=#peer_state{timer=Timer, round=Round}) ->
       _S2 = cancel_timer(State),
       io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]);
     {timeout, Timer, {round_timeout, R}} when R >= Round ->
-      io:format("~p should start election now for round ~p~n", [self(), R + 1]),
-      election(State#peer_state{round=R + 1});
+      io:format("~p should start election now for round ~p~n", [self(), R]),
+      election(State#peer_state{round=R});
     {request_vote, Counter, Pid, R} when R > Round ->
       io:format("~p voting for ~p for round ~p~n", [self(), Pid, R]),
       S2 = cancel_timer(State),

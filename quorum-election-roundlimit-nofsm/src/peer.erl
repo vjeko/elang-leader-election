@@ -213,7 +213,7 @@ wait_election(State =
           false ->
               Ctr ! {reject, P2, R},
               wait_election(State);
-		  true ->
+		  _ ->
 			  exit(bug1)
 		end;
       {timeout, Timer, {vote_timeout, Round}} ->

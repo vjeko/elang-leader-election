@@ -6,6 +6,8 @@
 -define(KEEP_ALIVE_TIME, 250).
 -define(MAX_ROUNDS, 2).
 
+-define(BUG1, true).
+
 -export([timer_test/2, initial/2, spawn_wait/0, setup_sync/1, concuerror_test/0]).
 
 
@@ -184,7 +186,7 @@ wait_election(State =
         follower(reset_round_timeout(State#peer_state{round = Round + 1, leader = none, voted_for = none}));
       {leader, Leader, R} when R >= Round ->
         io:format("~p someone else ~p asserting leadership for round ~p~n", [self(), Leader, R]),
-        Counter ! cancel; % XXX: Bug #1
+        Counter ! cancel;
         %follower(reset_round_timeout(State#peer_state{round = R, leader = Leader, voted_for = none}));
       {leader, Leader, R} when R < Round ->
         io:format("~p someone else ~p asserting leadership for round ~p (STALE) ~n", [self(), Leader, R]),
@@ -207,8 +209,13 @@ wait_election(State =
                ?VOTE_TIMEOUT,
                {vote_timeout, R}));
       {request_vote, Ctr, P2, R} ->
-        Ctr ! {reject, P2, R},
-        wait_election(State);
+		case ?BUG1 of
+          false ->
+              Ctr ! {reject, P2, R},
+              wait_election(State);
+		  true ->
+			  exit(bug1)
+		end;
       {timeout, Timer, {vote_timeout, Round}} ->
         io:format("~p Things did not work out, stopping election for round ~p~n", [self(), Round]),
         Counter ! cancel,

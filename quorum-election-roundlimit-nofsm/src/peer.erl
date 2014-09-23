@@ -7,9 +7,9 @@
 -define(MAX_ROUNDS, 2).
 
 -define(BUG1, true).
+-define(MASTER, false).
 
--export([timer_test/2, initial/2, spawn_wait/0, setup_sync/1, concuerror_test/0]).
-
+-export([timer_test/2, initial/2, spawn_wait/0, setup/1, setup_sync/1, concuerror_test/0]).
 
 -record(peer_state,
     {
@@ -24,12 +24,10 @@
      seed :: {integer(), integer(), integer()}
     }).
 
-
 start_timer(State, Timeout, Message) ->
   State#peer_state{timer = erlang:start_timer(Timeout, self(), Message)}.
 
-
-cancel_timer(S = #peer_state{timer = Timer}) ->
+cancel_timer(S=#peer_state{timer = Timer}) ->
   case erlang:cancel_timer(Timer) of 
     false ->
       receive 
@@ -38,7 +36,6 @@ cancel_timer(S = #peer_state{timer = Timer}) ->
       end;
     _ -> S#peer_state{timer=none}
   end.
-
 
 %% Test timer functionality.
 -spec(timer_test(integer(), boolean()) -> boolean()).
@@ -54,43 +51,50 @@ timer_test(Timeout, Cancel) ->
     after 2*Timeout -> Cancel
   end.
 
-
-reset_round_timeout(State = 
-	#peer_state{round_timeout = Time, round = Round}) ->
+reset_round_timeout(State=#peer_state{round_timeout=Time, round=Round}) ->
   start_timer(State, Time, {round_timeout, Round}).
 
+-spec(initial({integer(), integer(), integer()}, #peer_state{}) -> none()).
+initial(Seed, Peers) ->
+  random:seed(Seed),
+  RoundTime =  random:uniform(?ROUND_TIMEOUT_MAX - ?ROUND_TIMEOUT_MIN) + ?ROUND_TIMEOUT_MIN,
+  io:format("~p selecting round timeout at ~p~n", [self(), RoundTime]),
+  State = #peer_state{
+            peers=Peers, 
+            seed=Seed,
+            round_timeout = RoundTime
+  },
+  S2 = reset_round_timeout(State),
+  follower(S2).
 
-follower(State=#peer_state{timer=Timer, round=Round})
-  	when Round =< ?MAX_ROUNDS ->
+follower(State=#peer_state{timer=Timer, round=Round}) when Round =< ?MAX_ROUNDS ->
   receive
-	{kill} -> ok;
+    {kill} -> ok;
     {leader, Leader, R} when R >= Round ->
       _S2 = cancel_timer(State),
       io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]);
     {timeout, Timer, {round_timeout, R}} when R >= Round ->
       io:format("~p should start election now for round ~p~n", [self(), R]),
-      election(#peer_state{round = R} = State);
+      election(State#peer_state{round=R});
     {request_vote, Counter, Pid, R} when R >= Round ->
       io:format("~p voting for ~p for round ~p~n", [self(), Pid, R]),
       S2 = cancel_timer(State),
       Counter ! {accept, Pid, R},
-      wait(start_timer(#peer_state{voted_for = Pid, round = R} = S2,
-                       ?VOTE_TIMEOUT,
-                       {vote_timeout, R}));
+      wait(start_timer(
+             S2#peer_state{voted_for=Pid, round = R},
+             ?VOTE_TIMEOUT,
+             {vote_timeout, R}));
     {request_vote, Counter, Pid, R} when R < Round ->
       io:format("~p not voting for ~p (stale round ~p)~n", [self(), Pid, R]),
       Counter ! {reject, Pid, R},
       follower(State)
   end;
-
 follower(#peer_state{}) ->
   ok.
 
-
-wait(State=#peer_state{timer=Timer, round=Round, voted_for=Voted})
-  	when Round =< ?MAX_ROUNDS->
+wait(State=#peer_state{timer=Timer, round=Round, voted_for=Voted}) when Round =< ?MAX_ROUNDS->
   receive
-	{kill} -> ok;
+    {kill} -> ok;
     {timeout, Timer, {vote_timeout, Round}} ->
       io:format("~p election round expired ~p ~p~n", [self(), Voted, Round]), 
       follower(reset_round_timeout(State#peer_state{round=Round + 1, voted_for=none}));
@@ -109,71 +113,18 @@ wait(State=#peer_state{timer=Timer, round=Round, voted_for=Voted})
       S2 = cancel_timer(State),
       Counter ! {accept, Pid, R},
       wait(start_timer(
-             #peer_state{voted_for = Pid, round = R} = S2,
+             S2#peer_state{voted_for=Pid, round = R},
              ?VOTE_TIMEOUT,
              {vote_timeout, R}))
   end;
-
 wait(#peer_state{}) ->
   ok.
 
 
-counter(Pid, Round, AcceptCount, _RejectCount, Quorum) 
-	when AcceptCount >= Quorum ->
-  receive 
-    cancel -> ok
-    after 0 ->  Pid ! {success, Round, AcceptCount}
-  end;
-
-counter(Pid, Round, AcceptCount, RejectCount, Quorum)
-	when RejectCount >= Quorum ->
-  receive 
-    cancel -> ok
-    after 0 ->  Pid ! {fail, Round, AcceptCount}
-  end;
-
-counter(Pid, Round, AcceptCount, RejectCount, Quorum) ->
-  io:format("~p Counter is running for ~p ~n", [self(), Pid]),
-  receive
-    cancel ->
-        io:format("~p (for ~p) cancelled ~n", [self(), Pid]);
-    {accept, Pid, Round} ->
-        io:format("~p for ~p received vote, quorum size is ~p (round ~p)~n", [self(), Pid, Quorum, Round]),
-        counter(Pid, Round, AcceptCount + 1, RejectCount, Quorum);
-    {reject, Pid, Round} ->
-        io:format("~p for ~p received  no vote, quorum size is ~p (round ~p)~n", [self(), Pid, Quorum, Round]),
-        counter(Pid, Round, AcceptCount, RejectCount + 1, Quorum)
-  end.
-
-
-spawn_counter(#peer_state{round = Round, peers = Peers}) ->
-  Quorum = (length(Peers) div 2) + 1,
-  Pid = self(),
-  spawn_link(fun () -> counter(Pid, Round, 0, 0, Quorum) end).
-
-
-election(State = #peer_state{round = Round, peers = Peers}) 
-  	when Round =< ?MAX_ROUNDS ->
-  Counter = spawn_counter(State),
-  RequestVote = fun (P) -> P ! {request_vote, Counter, self(), Round} end,
-  lists:map(RequestVote, Peers),
-  wait_election(start_timer(#peer_state{counter = Counter} = State, 
-							?VOTE_TIMEOUT, 
-							{vote_timeout, Round}));
-
-
-election(#peer_state{}) -> ok.
-
-
-announce_leader(Pid, Round, #peer_state{peers=Peers}) ->
-  lists:map(fun (P) -> P ! {leader, Pid, Round} end, Peers).
-
-
-wait_election(State = 
-	#peer_state{round = Round, counter = Counter, timer = Timer}) ->
+wait_election(State=#peer_state{round=Round, counter=Counter, timer = Timer}) ->
   Pid = self(),
   receive
-	  {kill} -> ok;
+      {kill} -> ok;
       {success, Round, Ct} -> 
         io:format("~p elected leader with ~p votes~n", [self(), Ct]),
         announce_leader(Pid, Round, State),
@@ -209,13 +160,13 @@ wait_election(State =
                ?VOTE_TIMEOUT,
                {vote_timeout, R}));
       {request_vote, Ctr, P2, R} ->
-		case ?BUG1 of
+        case ?BUG1 of
           false ->
-              Ctr ! {reject, P2, R},
-              wait_election(State);
-		  _ ->
-			  exit(bug1)
-		end;
+            Ctr ! {reject, P2, R},
+            wait_election(State);
+          _ ->
+            exit(bug1)
+        end;
       {timeout, Timer, {vote_timeout, Round}} ->
         io:format("~p Things did not work out, stopping election for round ~p~n", [self(), Round]),
         Counter ! cancel,
@@ -227,12 +178,43 @@ wait_election(State =
   end.
 
 
--spec(initial({integer(), integer(), integer()}, #peer_state{}) -> #peer_state{}).
-initial(Seed, Peers) ->
-  random:seed(Seed),
-  RoundTime =  random:uniform(?ROUND_TIMEOUT_MAX - ?ROUND_TIMEOUT_MIN) + ?ROUND_TIMEOUT_MIN,
-  io:format("~p selecting round timeout at ~p~n", [self(), RoundTime]),
-  #peer_state{peers = Peers, seed = Seed, round_timeout = RoundTime}.
+counter(Pid, Round, AcceptCount, _RejectCount, Quorum) when AcceptCount >= Quorum ->
+  receive 
+    cancel -> ok
+    after 0 ->  Pid ! {success, Round, AcceptCount}
+  end;
+counter(Pid, Round, AcceptCount, RejectCount, Quorum) when RejectCount >= Quorum ->
+  receive 
+    cancel -> ok
+    after 0 ->  Pid ! {fail, Round, AcceptCount}
+  end;
+counter(Pid, Round, AcceptCount, RejectCount, Quorum) ->
+  io:format("~p Counter is running for ~p ~n", [self(), Pid]),
+  receive
+    cancel ->
+        io:format("~p (for ~p) cancelled ~n", [self(), Pid]);
+    {accept, Pid, Round} ->
+        io:format("~p for ~p received vote, quorum size is ~p (round ~p)~n", [self(), Pid, Quorum, Round]),
+        counter(Pid, Round, AcceptCount + 1, RejectCount, Quorum);
+    {reject, Pid, Round} ->
+        io:format("~p for ~p received  no vote, quorum size is ~p (round ~p)~n", [self(), Pid, Quorum, Round]),
+        counter(Pid, Round, AcceptCount, RejectCount + 1, Quorum)
+  end.
+
+spawn_counter(#peer_state{round = Round, peers=Peers}) ->
+  Quorum = (length(Peers) div 2) + 1,
+  Pid = self(),
+  spawn_link(fun () -> counter(Pid, Round, 0, 0, Quorum) end).
+
+election(State=#peer_state{round = Round, peers = Peers}) when Round =< ?MAX_ROUNDS ->
+  Counter = spawn_counter(State), 
+  lists:map(fun (P) -> P ! {request_vote, Counter, self(), Round} end, Peers),
+  wait_election(start_timer(State#peer_state{counter=Counter}, ?VOTE_TIMEOUT, {vote_timeout, Round}));
+election(#peer_state{}) ->
+  ok.
+
+announce_leader(Pid, Round, #peer_state{peers=Peers}) ->
+  lists:map(fun (P) -> P ! {leader, Pid, Round} end, Peers).
 
 
 -spec(wait(none()) -> none()).
@@ -241,15 +223,22 @@ spawn_wait () ->
     receive
         {start, Seed, Peers} -> 
             io:format("Received start signal~n"),
-            State = initial(Seed, Peers),
-            S2 = reset_round_timeout(State),
-            follower(S2);
+            initial(Seed, Peers);
         M ->
           io:format("~p [Peer-Internal] Received something else ~p ~n", [self(), M]),
           spawn_wait()
     end.
 
-
+-spec(setup(integer()) -> none()).
+setup (N) ->
+  Seeds = [{X * 13, X * 7, X + 1} || X <- lists:seq(1, N)],
+  Peers = [spawn_link(fun spawn_wait/0) || _ <- lists:seq(1, N)],
+  Args = [{start, Seed, Peers} || Seed <- Seeds],
+  receive
+    go ->
+        io:format("Opening flood gates~n"),
+        lists:zipwith(fun (Peer, Arg) -> Peer ! Arg end, Peers, Args)
+  end.
 
 -spec(setup_sync(integer()) -> none()).
 setup_sync (N) ->
@@ -258,12 +247,15 @@ setup_sync (N) ->
   Args = [{start, Seed, Peers} || Seed <- Seeds],
   io:format("Opening flood gates~n"),
   lists:zipwith(fun (Peer, Arg) -> Peer ! Arg end, Peers, Args),
-
-  Master = spawn_link(fun master/0),
-  Master ! {start, Peers},
-
-  ok.
-
+  
+  case ?MASTER of
+	  true ->
+        Master = spawn_link(fun master/0),
+        Master ! {start, Peers},
+		ok;
+      false -> 
+		ok
+  end.
 
 -spec(master() -> none()).
 master() ->

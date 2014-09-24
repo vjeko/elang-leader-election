@@ -161,7 +161,7 @@ wait_election(State=#peer_state{round=Round, counter=Counter, timer = Timer}) ->
                {vote_timeout, R}));
       {request_vote, Ctr, P2, R} ->
         case ?BUG1 of
-          _ ->
+          false ->
             Ctr ! {reject, P2, R},
             wait_election(State);
           true ->
@@ -278,4 +278,4 @@ master() ->
 -spec(concuerror_test() -> none()).
 concuerror_test() ->
   io:format("~p starting thing~n", [self()]),
-  setup_sync(5).
+  setup_sync(7).

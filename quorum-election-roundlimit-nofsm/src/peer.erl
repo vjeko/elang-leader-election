@@ -161,12 +161,12 @@ wait_election(State=#peer_state{round=Round, counter=Counter, timer = Timer}) ->
                {vote_timeout, R}));
       {request_vote, Ctr, P2, R} ->
         case ?BUG1 of
-          false ->
-            Ctr ! {reject, P2, R},
-            wait_election(State);
           true ->
             io:format("Here comes the bug!"),
             erlang:error(bug1)
+          false ->
+            Ctr ! {reject, P2, R},
+            wait_election(State);
         end;
       {timeout, Timer, {vote_timeout, Round}} ->
         io:format("~p Things did not work out, stopping election for round ~p~n", [self(), Round]),

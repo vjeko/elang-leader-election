@@ -161,11 +161,12 @@ wait_election(State=#peer_state{round=Round, counter=Counter, timer = Timer}) ->
                {vote_timeout, R}));
       {request_vote, Ctr, P2, R} ->
         case ?BUG1 of
-          false ->
+          _ ->
             Ctr ! {reject, P2, R},
             wait_election(State);
-          _ ->
-            exit(bug1)
+          true ->
+            io:format("Here comes the bug!"),
+            erlang:error(bug1)
         end;
       {timeout, Timer, {vote_timeout, Round}} ->
         io:format("~p Things did not work out, stopping election for round ~p~n", [self(), Round]),
@@ -219,6 +220,7 @@ announce_leader(Pid, Round, #peer_state{peers=Peers}) ->
 
 -spec(wait(none()) -> none()).
 spawn_wait () ->
+
     io:format("Now waiting~n"),
     receive
         {start, Seed, Peers} -> 
@@ -272,7 +274,8 @@ master() ->
           master()
     end.
 
+
 -spec(concuerror_test() -> none()).
 concuerror_test() ->
   io:format("~p starting thing~n", [self()]),
-  setup_sync(7).
+  setup_sync(5).

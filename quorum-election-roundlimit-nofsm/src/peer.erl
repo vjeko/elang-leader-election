@@ -162,7 +162,7 @@ wait_election(State=#peer_state{round=Round, counter=Counter, timer = Timer}) ->
       {request_vote, Ctr, P2, R} ->
         case ?BUG1 of
           true ->
-            io:format("Here comes the bug!"),
+            io:format("Here comes the bug!~n"),
             erlang:error(bug1);
           false ->
             Ctr ! {reject, P2, R},
@@ -264,7 +264,7 @@ master() ->
     io:format("spawning the master~n"),
     receive
         {start, Peers} -> 
-            io:format("time to kill some nodes..."),
+            io:format("Time to kill some nodes...~n"),
 			NumPeers = length(Peers) div 2 - 1,
 			{List1, _} = lists:split(NumPeers, Peers),
 			Fun = fun (Peer) -> Peer ! {kill} end,

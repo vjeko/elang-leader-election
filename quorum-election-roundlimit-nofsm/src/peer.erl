@@ -71,8 +71,8 @@ follower(State=#peer_state{timer=Timer, round=Round}) when Round =< ?MAX_ROUNDS 
   receive
     {kill} -> ok;
     {leader, Leader, R} when R >= Round ->
-      _S2 = cancel_timer(State),
-      io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]);
+      io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]),
+      _S2 = cancel_timer(State);
     {timeout, Timer, {round_timeout, R}} when R >= Round ->
       io:format("~p should start election now for round ~p~n", [self(), R]),
       election(State#peer_state{round=R});
@@ -96,10 +96,11 @@ wait(State=#peer_state{timer=Timer, round=Round, voted_for=Voted}) when Round =<
   receive
     {kill} -> ok;
     {timeout, Timer, {vote_timeout, Round}} ->
-      io:format("~p election round expired ~p ~p~n", [self(), Voted, Round]), 
+      io:format("~p election round expired ~p ~p~n", [self(), Voted, Round]),
       follower(reset_round_timeout(State#peer_state{round=Round + 1, voted_for=none}));
     {leader, Leader, R} when R >= Round ->
-      io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]);
+      io:format("~p: ~p asserting leadership for round ~p~n", [self(), Leader, R]),
+	  ok;
       %follower(reset_round_timeout(State#peer_state{round = R, leader = Leader, voted_for = none}));
     {leader, Leader, R} when R < Round ->
       io:format("~p: ~p asserting leadership for round ~p (Stale)~n", [self(), Leader, R]),
@@ -130,7 +131,8 @@ wait_election(State=#peer_state{round=Round, counter=Counter, timer = Timer}) ->
         announce_leader(Pid, Round, State),
         receive
             {leader, Pid, Round} -> 
-                io:format("~p announced leader with ~p votes (round ~p)~n", [self(), Ct, Round])
+                io:format("~p announced leader with ~p votes (round ~p)~n", [self(), Ct, Round]),
+				ok
         end;
       {fail, Round, Ct} ->
         io:format("~p not elected leader with ~p votes (round ~p)~n", [self(), Ct, Round]),
@@ -193,7 +195,8 @@ counter(Pid, Round, AcceptCount, RejectCount, Quorum) ->
   io:format("~p Counter is running for ~p ~n", [self(), Pid]),
   receive
     cancel ->
-        io:format("~p (for ~p) cancelled ~n", [self(), Pid]);
+        io:format("~p (for ~p) cancelled ~n", [self(), Pid]),
+		ok;
     {accept, Pid, Round} ->
         io:format("~p for ~p received vote, quorum size is ~p (round ~p)~n", [self(), Pid, Quorum, Round]),
         counter(Pid, Round, AcceptCount + 1, RejectCount, Quorum);

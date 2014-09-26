@@ -281,4 +281,4 @@ master() ->
 -spec(concuerror_test() -> none()).
 concuerror_test() ->
   io:format("~p starting thing~n", [self()]),
-  setup_sync(7).
+  setup_sync(3).
